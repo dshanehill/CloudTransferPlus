@@ -1,0 +1,9 @@
+# Explicit live integration checks
+
+These standalone tools are excluded from normal app builds and CI. Run only when the account holder authorizes live checks. They retain test evidence and never issue a MEGA move/delete command. The native interface harness is separately compiled with `-DINTERFACE_CHECK`; production builds exclude it.
+
+`LiveCancellation.swift` accepts a working directory containing a private `live-cancellation-entry.json` with one validated ManifestEntry. It downloads to a new private UUID staging slot, observes its owned transfer tag, requests cancellation, waits for reconciliation and compares source metadata. No global cancellation is used. If a query fails it still signals Stop and awaits download cleanup. Build against HarborCore objects from the local Swift package build; pass only the working directory as its argument. Review generated `live-cancellation-result.json`; no success is claimed if the transfer completed too quickly or cancellation was unconfirmed.
+
+`CloudRoundtrip.swift` accepts a working directory and an iCloud destination directory. It creates one 32 KB synthetic file inside `Cloud Transfer+ verification`, retains a local reference, waits for Apple upload status, requests eviction, waits for online-only status, requests download and compares SHA-256. An optional third path resumes only a matching synthetic file in that directory. Each poll clears cached URL resource values. Build with `swiftc -parse-as-library Tests/IntegrationChecks/CloudRoundtrip.swift -o <working-directory>/cloud-roundtrip`. Test files are retained. An account error or timeout is a failed/inconclusive check, never proof of a cloud backup.
+
+The 0.5.2 review observed confirmed real MEGA cancellation and a successful synthetic iCloud round trip after a transient account-access error. This does not implement cloud read-back for the user's migration or establish full-library unattended performance.

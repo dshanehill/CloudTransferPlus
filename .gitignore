@@ -1,0 +1,17 @@
+.build/
+.swiftpm/
+.DS_Store
+*.app/
+*.zip
+*.log
+.env
+.env.*
+/pilot.json
+/pilot-changes.jsonl
+/mega-listing-last.txt
+/megacmd-last-output.txt
+/manifest.json
+/manifest.excluded.txt
+Staging/
+Archived runs/
+scripts/AppIcon.icns
