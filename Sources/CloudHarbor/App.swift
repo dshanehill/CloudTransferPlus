@@ -37,6 +37,8 @@ func fs(_ size: CGFloat) -> CGFloat { (size * uiScale).rounded() }
                 CommandGroup(replacing: .newItem) { Button("Export transfer report…") { store.exportReport() }.keyboardShortcut("e", modifiers: [.command, .shift]) }
                 CommandMenu("Transfers") {
                     Button("Exclude Recycle Bin and System Files") { store.excludeSystemJunk() }.disabled(store.running || store.busy || store.demo)
+                    Divider()
+                    Button(store.turbo ? "Turn Turbo Off" : "Turn Turbo On") { store.turbo.toggle() }.keyboardShortcut("t", modifiers: [.command, .shift]).disabled(store.demo)
                 }
                 CommandMenu("Sound") {
                     Button(store.soundsMuted ? "Turn Sounds On" : "Mute Sounds") { store.soundsMuted.toggle() }.keyboardShortcut("m", modifiers: [.command, .shift])
@@ -130,6 +132,7 @@ struct Dashboard: View {
             }.buttonStyle(.plain).padding(.horizontal, 10).padding(.vertical, 6).background(ink.opacity(0.06), in: Capsule())
             .help(store.soundsMuted ? "Turn sounds and spoken progress on (⇧⌘M)" : "Mute sounds and spoken progress (⇧⌘M)")
             .accessibilityLabel(store.soundsMuted ? "Sounds are off. Turn on" : "Sounds are on. Mute").padding(.trailing, 10)
+            turboButton.padding(.trailing, 10)
             Label(store.demo ? "Demo workspace" : "Live workspace", systemImage: store.demo ? "sparkles" : "arrow.left.arrow.right").font(.system(size: fs(11), weight: .medium)).foregroundStyle(store.demo ? accent : Color(red: 0.62, green: 0.32, blue: 0.0)).padding(.horizontal, 12).padding(.vertical, 7).background((store.demo ? accent : .orange).opacity(0.1), in: Capsule())
             if store.running {
                 Button(store.pauseRequested ? "Pausing…" : "Pause after file", action: store.pauseAfterFile).disabled(store.pauseRequested)
@@ -137,6 +140,24 @@ struct Dashboard: View {
             }
             Button { store.exportReport() } label: { Label("Export report", systemImage: "square.and.arrow.up").font(.system(size: fs(12), weight: .medium)) }.buttonStyle(.plain).padding(.leading, 18)
         }.font(.system(size: fs(12))).padding(.horizontal, 30).frame(minHeight: 68).background(.white).overlay(alignment: .bottom) { Rectangle().fill(ink.opacity(0.07)).frame(height: 1) }
+    }
+
+    /// 0.9.1: one-click Turbo for when you step away. Orange and filled while on, so it's obvious from across the room.
+    var turboButton: some View {
+        let turboTint = Color(red: 0.85, green: 0.4, blue: 0.0)
+        return Button { store.turbo.toggle() } label: {
+            Label(store.turbo ? "Turbo on" : "Turbo", systemImage: store.turbo ? "bolt.fill" : "bolt")
+                .font(.system(size: fs(11), weight: store.turbo ? .bold : .medium))
+                .foregroundStyle(store.turbo ? .white : ink)
+        }
+        .buttonStyle(.plain).padding(.horizontal, 10).padding(.vertical, 6)
+        .background(store.turbo ? turboTint : ink.opacity(0.06), in: Capsule())
+        .disabled(store.demo)
+        .help(store.turbo ? "Turbo is on: \(TransferStore.turboWorkers) files at a time even while you use the Mac. Click to go back to normal (⇧⌘T)" : "Turbo: copy \(TransferStore.turboWorkers) files at a time and retry faster — for when you step away (⇧⌘T)")
+        .accessibilityLabel("Turbo")
+        .accessibilityValue(store.turbo ? "on" : "off")
+        .accessibilityHint("Copies more files at once and retries faster. Best when you're away from the Mac.")
+        .accessibilityAddTraits(.isToggle)
     }
 
     var overview: some View {
@@ -265,7 +286,7 @@ struct Dashboard: View {
             if store.textScale > 1.5 { VStack(alignment: .leading, spacing: 18) { downloadColumn; uploadColumn } }
             else { HStack(alignment: .top, spacing: 18) { downloadColumn.frame(maxWidth: .infinity, alignment: .topLeading); uploadColumn.frame(maxWidth: .infinity, alignment: .topLeading) } }
             HStack(spacing: 6) {
-                Image(systemName: store.macIdle ? "moon.zzz.fill" : "speedometer").accessibilityHidden(true)
+                Image(systemName: store.turbo ? "bolt.fill" : store.macIdle ? "moon.zzz.fill" : "speedometer").accessibilityHidden(true)
                 Text(workerText).fixedSize(horizontal: false, vertical: true)
             }.font(.system(size: fs(11), weight: .medium)).foregroundStyle(muted)
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading).card()
@@ -361,8 +382,12 @@ struct Dashboard: View {
     }
 
     var workerText: String {
-        guard store.running else { return "Copies 3 files at a time while you use the Mac and 6 when it has been idle for 2 minutes. The Mac is kept awake while copying. " + (store.autoRelease ? "Local copies are freed automatically after Apple reports each upload." : "Automatic release is off: copies stay on this Mac until released.") }
-        var text = store.macIdle ? "Mac idle: running up to \(store.workerLimit) files at a time for maximum speed." : "Mac in use: running up to \(store.workerLimit) files at a time (6 when idle)."
+        let release = store.autoRelease ? "Local copies are freed automatically after Apple reports each upload." : "Automatic release is off: copies stay on this Mac until released, which can slow Turbo once the disk fills."
+        guard store.running else {
+            if store.turbo { return "Turbo is on: copies \(TransferStore.turboWorkers) files at a time and retries faster, whether or not you're using the Mac. The Mac is kept awake while copying. " + release }
+            return "Copies 3 files at a time while you use the Mac and 6 when it has been idle for 2 minutes. Press Turbo (⇧⌘T) before you step away for \(TransferStore.turboWorkers) at a time. The Mac is kept awake while copying. " + release
+        }
+        var text = store.turbo ? "Turbo: running up to \(store.workerLimit) files at a time with faster retries." : store.macIdle ? "Mac idle: running up to \(store.workerLimit) files at a time." : "Mac in use: running up to \(store.workerLimit) files at a time (6 when idle, \(TransferStore.turboWorkers) with Turbo)."
         if let speed = store.averageSpeed { text += " Download speed \(bytes(Int64(speed)))/s." }
         return text + " Kept awake while copying."
     }

@@ -49,6 +49,9 @@ In **Connections**:
 Press **Start transfers**. That's it. You can walk away.
 
 - It copies several files at a time, and more while you're away from the Mac.
+- **Stepping away?** Press **Turbo** (top right, or ⇧⌘T). It copies 10 files at a time even if someone is using the Mac,
+  and retries hiccups sooner. The button turns orange while it's on; press it again to go back to normal. Turbo still
+  checks free space before every file, so it can't fill your disk.
 - It keeps your Mac awake while copying. The screen and screensaver can still turn on.
 - A file that fails is retried quietly a few seconds later. One bad file never stops the run.
 - Once Apple confirms a file is uploaded, the local copy is cleared to save disk space. The file stays in iCloud.

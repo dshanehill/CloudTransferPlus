@@ -12,6 +12,8 @@ New here? Read the **[user guide](GUIDE.md)**.
 - **Pick a MEGA folder and an iCloud Drive folder, then press Start.** The app lists everything, then copies it over.
 - **Runs unattended.** Several files at a time (more while you're away from the Mac), keeps the Mac awake while copying,
   and picks up exactly where it stopped after a quit, crash or power cut.
+- **Turbo.** One toggle (⇧⌘T) for when you step away: 10 files at a time and faster retries, still with a free-space
+  check before every file.
 - **Fixes its own hiccups.** A file that fails is retried quietly a few seconds later. Nothing stops the whole run.
 - **Doesn't fill your disk.** It checks free space before every file and, once Apple confirms a file is uploaded,
   frees the local copy (iCloud keeps it online).
