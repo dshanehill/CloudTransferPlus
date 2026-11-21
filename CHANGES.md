@@ -1,5 +1,11 @@
 # Changes
 
+## 0.9.1
+
+- New **Turbo** toggle in the header and the Transfers menu (⇧⌘T). While on, the app copies 10 files at a time whether
+  or not the Mac is in use, retries failed files sooner (2 s first, capped at 30 s) and waits only 20 s after a run of
+  network failures. Free-space checks are unchanged. The setting is remembered between launches.
+
 ## 0.9.0 — first public release
 
 - Copies a MEGA folder into iCloud Drive through your Mac, several files at a time, unattended.
