@@ -1,5 +1,11 @@
 # Changes
 
+## 0.9.2
+
+- Fix: automatic release no longer requires 50 GB free. Releasing is what frees space, so with a nearly full disk
+  every release was refused and downloads waited for space forever. The 50 GB reserve still applies to downloads.
+- Uploaded files are noticed and released sooner: the app checks up to 200 files' iCloud status every few seconds (was 40).
+
 ## 0.9.1
 
 - New **Turbo** toggle in the header and the Transfers menu (⇧⌘T). While on, the app copies 10 files at a time whether

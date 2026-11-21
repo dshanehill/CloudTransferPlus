@@ -28,6 +28,9 @@ actor GatedHasher: FileHashing {
 struct FixtureSpace: SpaceAccess {
     func available(at url: URL) throws -> Int64 { 200_000_000_000 }
 }
+struct LowSpace: SpaceAccess {
+    func available(at url: URL) throws -> Int64 { 5_000_000_000 }
+}
 @main struct EngineChecks {
     @MainActor static var count = 0
     @MainActor static func check(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -72,10 +75,10 @@ struct FixtureSpace: SpaceAccess {
         func uploaded() -> Transfer {
             var t = Transfer(entry: .init(remoteHandle: "H:ABCDEFGH", relativePath: "Photos/sample.bin", expectedBytes: 32)); t.stage = .uploaded; return t
         }
-        func store(_ cloud: FakeCloud, hasher: any FileHashing = SHA256Hasher()) -> TransferStore {
+        func store(_ cloud: FakeCloud, hasher: any FileHashing = SHA256Hasher(), disk: any SpaceAccess = FixtureSpace()) -> TransferStore {
             let support = base.appendingPathComponent(UUID().uuidString, isDirectory: true)
             let prefs = UserDefaults(suiteName: "CloudTransferChecks-\(UUID().uuidString)")!
-            let store = TransferStore(supportURL: support, preferences: prefs, cloud: cloud, hasher: hasher, disk: FixtureSpace(), uploadErrorGrace: 0, startInDemo: true, autoDetectMEGA: false, startMonitor: false)
+            let store = TransferStore(supportURL: support, preferences: prefs, cloud: cloud, hasher: hasher, disk: disk, uploadErrorGrace: 0, startInDemo: true, autoDetectMEGA: false, startMonitor: false)
             store.demo = false; store.transfers = []; store.events = []; store.destination = support.appendingPathComponent("fake-cloud"); return store
         }
         func putFile(_ store: TransferStore, _ t: Transfer) async throws -> Transfer {
@@ -152,6 +155,12 @@ struct FixtureSpace: SpaceAccess {
             let engine = store(cloud); let t = try await putFile(engine, uploaded()); engine.transfers = [t]
             _ = await engine.releaseOne(t)
             check(engine.transfers[0].stage == .needsReview && cloud.evicted.isEmpty, "eviction error does not assert cloud survival")
+        }
+        // 0.9.2: releasing must work when the disk is low; it is what frees space.
+        do {
+            let cloud = FakeCloud(); let engine = store(cloud, disk: LowSpace()); let t = try await putFile(engine, uploaded()); engine.transfers = [t]
+            let released = await engine.releaseOne(t)
+            check(released && cloud.evicted.count == 1 && engine.transfers[0].stage == .released, "release frees space even when less than the 50 GB reserve is free (0.9.2)")
         }
         // Pass 3: full local copy flow, pre-existing destinations, journal failures and restart.
         do {
