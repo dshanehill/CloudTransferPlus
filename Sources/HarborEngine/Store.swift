@@ -959,8 +959,8 @@ public struct SHA256Hasher: FileHashing {
                 update(t.id, .released, "Apple reports uploaded and already stored online only. No download, hydration or eviction was requested. Cloud read-back not performed.")
                 return !stateWriteFailed
             }
-            let available = try disk.available(at: target.deletingLastPathComponent())
-            guard available >= Safety.reserve else { throw HarborError.invalid("Insufficient disk reserve for local verification. No local release was requested.") }
+            // 0.9.2: no free-space requirement here. Releasing only reads the file (checksum) and asks macOS to evict it,
+            // so it needs no room — and it is exactly what frees room when the disk is low. The 50 GB reserve applies to downloads.
             guard try await hasher.digest(target) == expected else { update(t.id, .needsReview, "Local file changed since it was verified. Release blocked."); return false }
             guard releaseAuthorized(automaticGeneration), transfers.first(where: { $0.id == t.id })?.stage == .uploaded else { return false }
             switch cloud.status(of: target) {
