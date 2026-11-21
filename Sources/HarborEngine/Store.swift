@@ -100,6 +100,25 @@ public struct SHA256Hasher: FileHashing {
     @Published public private(set) var macIdle = false
     @Published public private(set) var activeFiles: [UUID: ActiveFile] = [:]
     public private(set) var peakParallel = 0
+    /// 0.9.1 Turbo: for when you step away. Runs `turboWorkers` files side by side whether or not the Mac is in use,
+    /// retries sooner and waits less after network hiccups. Free-space checks still apply to every file, so Turbo
+    /// can never fill the disk; it just stops holding back. Remembered between launches.
+    public static let turboWorkers = 10
+    @Published public var turbo = false {
+        didSet {
+            guard oldValue != turbo else { return }
+            preferences.set(turbo, forKey: "turbo")
+            refreshWorkerLimit()
+            if running {
+                log(turbo ? "Turbo on: up to \(workerLimit) files at a time, faster retries." : "Turbo off: back to normal speed (up to \(workerLimit) files at a time).")
+                // Slots beyond the new limit simply aren't refilled; files already copying finish normally.
+            }
+            announce(.progress, turbo ? "Turbo on." : "Turbo off.")
+        }
+    }
+    private var effectiveRetryDelay: TimeInterval { turbo ? min(retryDelay, 2) : retryDelay }
+    private var effectiveMaxRetryDelay: TimeInterval { turbo ? min(maxRetryDelay, 30) : maxRetryDelay }
+    private var effectiveCooldown: TimeInterval { turbo ? min(cooldownSeconds, 20) : cooldownSeconds }
     private var inFlight = 0
     private var inFlightReservation: Int64 = 0
     private var claimed = Set<UUID>()
@@ -113,7 +132,7 @@ public struct SHA256Hasher: FileHashing {
     public var retryDelay: TimeInterval = 5
     public var maxRetryDelay: TimeInterval = 60
     public var retryingLaterCount: Int { let t = now(); return transfers.filter { $0.stage == .queued && (retryAfter[$0.id] ?? .distantPast) > t }.count }
-    private func backoff(_ attempt: Int) -> TimeInterval { min(maxRetryDelay, retryDelay * pow(2, Double(max(0, attempt - 1)))) }
+    private func backoff(_ attempt: Int) -> TimeInterval { min(effectiveMaxRetryDelay, effectiveRetryDelay * pow(2, Double(max(0, attempt - 1)))) }
     /// Clears this app's own partial download for a file, only after MEGA confirms nothing is still writing into it.
     private func clearSlot(_ id: UUID) async -> Bool {
         let slot = staging.appendingPathComponent(id.uuidString, isDirectory: true)
@@ -184,6 +203,7 @@ public struct SHA256Hasher: FileHashing {
             macIdle = quiet >= idleAfter
             workerLimit = max(1, macIdle ? idle : active)
         }
+        if turbo { workerLimit = max(workerLimit, TransferStore.turboWorkers) }
     }
     private func setActive(_ t: Transfer, phase: String, done: Int64? = nil) {
         var file = activeFiles[t.id] ?? ActiveFile(id: t.id, name: (t.entry.relativePath as NSString).lastPathComponent, bytes: t.entry.expectedBytes, done: 0, phase: phase, started: now())
@@ -354,6 +374,7 @@ public struct SHA256Hasher: FileHashing {
         // 0.8.7: the app turns automatic release on by default so the Mac's disk never fills with already-uploaded copies.
         autoRelease = (preferences.object(forKey: "autoRelease") as? Bool) ?? autoReleaseByDefault
         if let saved = preferences.object(forKey: "textScale") as? Double, (0.8...2.5).contains(saved) { textScale = saved }
+        turbo = preferences.bool(forKey: "turbo")
         uiScale = CGFloat(textScale)
         if startInDemo { loadDemo() } else { openWorkspace(); tab = transfers.isEmpty ? "Connections" : "Overview" }
         refreshSpace()
@@ -655,7 +676,7 @@ public struct SHA256Hasher: FileHashing {
         // Keep the Mac awake (the display may still sleep) so transfers continue overnight.
         sleepActivity = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .userInitiated], reason: "Cloud Transfer+ is copying files")
         announce(.started, "Transfer started. \(spokenProgress)")
-        log("Transfers started. Up to \(workerLimit) files at a time (more while the Mac is idle); MEGA originals are preserved.")
+        log(turbo ? "Transfers started in Turbo: up to \(workerLimit) files at a time; MEGA originals are preserved." : "Transfers started. Up to \(workerLimit) files at a time (more while the Mac is idle); MEGA originals are preserved.")
         Task {
             do {
                 guard let client else { throw HarborError.invalid("MEGAcmd is not connected.") }
@@ -727,9 +748,10 @@ public struct SHA256Hasher: FileHashing {
                         // Many failures in a row means MEGA or the network is down: wait a minute, then carry on (never stop).
                         if failuresInARow >= 5 && !coolingDown {
                             coolingDown = true
-                            log("Several files failed in a row. Waiting a minute for MEGA or the network, then continuing automatically.")
-                            announce(.problem, "MEGA is not answering. Waiting a minute, then continuing.")
-                            try? await Task.sleep(nanoseconds: UInt64(max(0, cooldownSeconds) * 1_000_000_000))
+                            let pause = effectiveCooldown
+                            log("Several files failed in a row. Waiting \(Int(pause)) seconds for MEGA or the network, then continuing automatically.")
+                            announce(.problem, "MEGA is not answering. Waiting \(pause >= 60 ? "a minute" : "\(Int(pause)) seconds"), then continuing.")
+                            try? await Task.sleep(nanoseconds: UInt64(max(0, pause) * 1_000_000_000))
                             coolingDown = false; failuresInARow = 0
                         }
                     }
