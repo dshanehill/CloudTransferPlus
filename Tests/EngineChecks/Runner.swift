@@ -361,6 +361,24 @@ struct FixtureSpace: SpaceAccess {
             try await waitFor { !engine.running }
             check(engine.transfers.allSatisfy { $0.stage == .awaitingUpload } && calls(bin).filter { $0.first == "get" }.count == 4 && engine.peakParallel == 3, "parallel run copies every file exactly once without exceeding the limit (0.8)")
             check(engine.activeFiles.isEmpty && engine.currentBatch == nil && engine.percentText == "100%", "progress clears active files and reaches 100% (0.8)")
+            // 0.9.1: Turbo lifts the limit above the normal policy, and is remembered.
+            do {
+                let (tbin, _) = try fixture("controlled")
+                let tsupport = base.appendingPathComponent(UUID().uuidString, isDirectory: true)
+                let tprefs = UserDefaults(suiteName: "CloudTransferChecks-\(UUID().uuidString)")!
+                let turbo = TransferStore(supportURL: tsupport, preferences: tprefs, cloud: FakeCloud(), disk: FixtureSpace(), uploadErrorGrace: 0, startInDemo: true, autoDetectMEGA: false, startMonitor: false, parallel: .fixed(3))
+                turbo.demo = false; turbo.transfers = []; turbo.events = []; turbo.destination = tsupport.appendingPathComponent("fake-cloud")
+                turbo.binaryFolder = tbin; turbo.capacityConfirmed = true; turbo.turbo = true
+                turbo.transfers = ["H:TURBO001", "H:TURBO002", "H:TURBO003", "H:TURBO004"].enumerated().map { i, h in Transfer(entry: .init(remoteHandle: h, relativePath: "t\(i).bin", expectedBytes: 32)) }
+                turbo.startTransfers()
+                try await waitFor { turbo.activeFiles.count == 4 }
+                check(turbo.workerLimit == TransferStore.turboWorkers && tprefs.bool(forKey: "turbo"), "Turbo runs more files than the normal limit and is remembered (0.9.1)")
+                try Data().write(to: tbin.appendingPathComponent("allow-get"))
+                try await waitFor { !turbo.running }
+                check(turbo.transfers.allSatisfy { $0.stage == .awaitingUpload } && turbo.peakParallel == 4, "Turbo copies every file exactly once (0.9.1)")
+                turbo.turbo = false
+                check(!tprefs.bool(forKey: "turbo"), "turning Turbo off is remembered (0.9.1)")
+            }
             check(TransferStore.isSystemJunk("Archive/Disk/$RECYCLE.BIN/S-1/$RX.iso") && TransferStore.isSystemJunk("D/System Volume Information/x") && !TransferStore.isSystemJunk("Photos/recycle bin tips.txt"), "Recycle Bin and system folders are recognised; ordinary names are not (0.8.1)")
             engine.transfers.append(Transfer(entry: .init(remoteHandle: "H:JUNK0001", relativePath: "$RECYCLE.BIN/old.iso", expectedBytes: 1_000)))
             let before = engine.totalBytes; engine.excludeSystemJunk(announceResult: false)
